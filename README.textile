@@ -1,0 +1,60 @@
+h1. Introduction
+
+GeoKV is a persistent store for geo spatial data that allows you to efficiently read/write geospatial data optimized for the efficient processing of this data under the assumption that at any time you access data in very specific regions.
+
+h1. Why?
+
+I've done a lot of processing of data related to places in the past few years. Generally what happens is that I get a bunch of data in either xml or json format with latitude/longitude and other meta data. Then I proceed to parse and process the data with some scripts. The size of the data typically ranges in the hundreds of MB or a few GB, compressed. Typically too much to keep it all in memory but not enough to waste time with elaborate hadoop based setups.
+
+Typically the processing involves parsing, doing some processing and then writing. Mostly I have done this processing in a streaming fashion, which is kind of restrictive. A lot of the processing that I really would like to do would involve reading data about a place, examining relevant data that is nearby and then writing one or more results.
+
+With data sets that don't quite fit in memory and an access pattern that is geographically localized, what I really would like is a persistent key value store that deals with disk access in such a way that I can spend most of the time doing efficient in memory lookups/writes and the occasional disk access to read/write entire regions back to disk. Also, a lot of this data compresses really well. So, why waste the bytes and treat compression as an afterthought?
+
+That, in a nutshell, is what GeoKV is about. It groups geospatial data by geohashes with a configurable length and simply reads/writes these blocks of data as a whole. The assumption here is that the data in a single geohash easily fits into memory, which is true for most datasets. The most ridiculous density you are likely to encounter would be in gigantic metropoles in e.g. China or South America where millions of people live in big cities and you might find tens of thousands of data points per square kilometer. Nothing you can't handle with a few GB of memory. 
+
+h1. Usage
+
+The java API is very similar to the Map api, with the difference that the put operation requires a latitude and longitude in addition to the key. Keys are always Strings, Values can be any type. Since we have to persist, you have to tell it how to do that by providing a ValueProcessor wwith a serialize and parse method.
+
+You can put, get, and remove values as well as iterate over the entire collection.
+
+h1. How does it work?
+
+The world is divided into rectangles and each rectangle has its own gzip file on disk with all the content for the area covered by that rectangle. The rectangles are calculated from the latitude and longitude of each entry and calculating a five character geohash. Geohashes are a nice way to encode coordinates and have the useful property that nearby points have the same geohash prefix. A geohash with length 5 covers about a city block.
+
+The store loads these files as needed and uses a guava LRU cache to keep recently accessed geohashes in memory. So, if you get and put entries in the same area, the geohashes are mostly in memory. When geohashes drop out of the cache, the data gets written to disk.
+ 
+h1. Caveats
+
+* This is not a transactional store nor does this store do atomic writes. Instead this is an in memory store that occasionally accesses the disk and in fact tries to not do that too often so as to keep things fast. 
+* This store provides no protection against data corruption. So, if you run out of memory, you may lose data and/or end up with a corrupted store. Should this happen, you may be able to recover some of the data by checking the gz files and regenerating ids.gz with a script (not provided). 
+* Given the above, you might want to back your data directory up regularly.
+
+
+h1. Installation
+
+It's a maven project. So, checking it out and doing a mvn clean install should do the trick.
+
+Alternatively, you may use my github maven repository, which is where I deploy releases for some of my projects. In order to use this, you have to configure your settings.xml as explained here: https://github.com/jillesvangurp/mvnrepo
+
+Then you can add the following dependency:
+
+<pre>
+<code>
+<dependency>
+    <groupId>com.github.jillesvangurp</groupId>
+    <artifactId>geokv</artifactId>
+    <version>x.y</version>
+</dependency>
+</code>
+</pre>
+
+Alternatively, you can exercise your rights under the license and simply copy and adapt. The "license":https://github.com/jillesvangurp/efficientstring/blob/master/LICENSE allows you to do this and I have no problems with this.
+
+Should anyone like this licensed differently, please contact me.
+
+If anyone wants to fix stuff just send me a pull request.
+
+h1. Changelog
+
+* unreleased as of yet, keep an eye on the commit log
