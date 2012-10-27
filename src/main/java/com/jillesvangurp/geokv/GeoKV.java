@@ -11,9 +11,13 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.nio.charset.Charset;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.NoSuchElementException;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -44,14 +48,16 @@ import com.jillesvangurp.geo.GeoHashUtils;
 public class GeoKV<Value> implements Closeable, Iterable<Value> {
     private static final int GEOHASH_LENGTH = 5;
     private final String dataDir;
-    private final Map<String, String> id2geohash;
+    private final Map<String, String> key2geohash;
     private final LoadingCache<String, Bucket> cache;
     private final ValueProcessor<Value> processor;
+    private final Set<String> geoHashes;
 
     public GeoKV(String dataDir, int buckets, ValueProcessor<Value> processor) {
         this.dataDir = dataDir;
         this.processor = processor;
-        this.id2geohash = new ConcurrentHashMap<String, String>();
+        this.key2geohash = new ConcurrentHashMap<String, String>();
+        this.geoHashes = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
         CacheLoader<String, Bucket> loader = new CacheLoader<String, Bucket>() {
             @Override
             public Bucket load(String geohash) throws Exception {
@@ -84,7 +90,8 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
                             } else {
                                 String key = line.substring(0, tab);
                                 String geoHash = line.substring(tab + 1);
-                                id2geohash.put(key, geoHash);
+                                key2geohash.put(key, geoHash);
+                                geoHashes.add(geoHash);
                             }
                         }
                     }
@@ -93,6 +100,14 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
                 throw new IllegalStateException(e);
             }
         }
+    }
+
+    public Set<String> bucketGeoHashes() {
+        return Collections.unmodifiableSet(geoHashes);
+    }
+
+    public Set<String> keySet() {
+        return Collections.unmodifiableSet(key2geohash.keySet());
     }
 
     /**
@@ -114,8 +129,11 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
         try {
             String hashPrefix = hash.substring(0, GEOHASH_LENGTH);
             Bucket bucket = cache.get(hashPrefix);
-            id2geohash.put(key, hashPrefix);
-            bucket.put(key, hash, value);
+            synchronized (this) {
+                key2geohash.put(key, hashPrefix);
+                geoHashes.add(hashPrefix);
+                bucket.put(key, hash, value);
+            }
         } catch (ExecutionException e) {
             throw new IllegalStateException(e);
         }
@@ -123,7 +141,7 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
 
     public Value get(String key) {
         try {
-            String hash = id2geohash.get(key);
+            String hash = key2geohash.get(key);
             if (hash == null) {
                 return null;
             } else {
@@ -134,14 +152,129 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
         }
     }
 
+    private <T> Iterable<T> toIterable(final Iterator<T> it) {
+        return new Iterable<T>() {
+            @Override
+            public Iterator<T> iterator() {
+                return it;
+            }
+        };
+    }
+
+    public Iterable<Value> filterGeoHashes(final String... hashes) {
+        String[] sortedHashes = Arrays.copyOf(hashes, hashes.length);
+        Arrays.sort(sortedHashes);
+
+        return toIterable(new Iterator<Value>() {
+            int i = 0;
+            Iterator<Value> currentIt = null;
+            Value next = null;
+
+            @Override
+            public boolean hasNext() {
+                if(next != null) {
+                    return true;
+                }
+                if (currentIt == null || !currentIt.hasNext()) {
+                    if(i<hashes.length) {
+                        currentIt = filterGeoHash(hashes[i++]).iterator();
+                    } else {
+                        return false;
+                    }
+                }
+                if (currentIt == null || !currentIt.hasNext()) {
+                    return false;
+                }
+                next = currentIt.next();
+                return true;
+            }
+
+            @Override
+            public Value next() {
+                if (hasNext()) {
+                    Value result = next;
+                    next = null;
+                    return result;
+                } else {
+                    throw new NoSuchElementException();
+                }
+            }
+
+            @Override
+            public void remove() {
+                throw new UnsupportedOperationException("remove is not supported");
+            }
+        });
+    }
+
+    public Iterable<Value> filterGeoHash(final String hash) {
+        try {
+            if (hash.length() >= GEOHASH_LENGTH) {
+                // only one bucket
+                Bucket bucket = cache.get(hash.substring(0, GEOHASH_LENGTH));
+                return toIterable(bucket.filter(hash));
+            } else {
+                final Iterator<String> geoHashesIterator = geoHashes.iterator();
+                // multiple buckets
+                return toIterable(new Iterator<Value>() {
+                    Iterator<Value> currentIt = null;
+
+                    @Override
+                    public boolean hasNext() {
+                        if (currentIt == null || !currentIt.hasNext()) {
+                            getNextIt();
+                        }
+                        if (currentIt == null || !currentIt.hasNext()) {
+                            return false;
+                        }
+                        return true;
+                    }
+
+                    private void getNextIt() {
+                        while (geoHashesIterator.hasNext()) {
+                            String nextHash = geoHashesIterator.next();
+                            if (nextHash.startsWith(hash)) {
+                                try {
+                                    currentIt = cache.get(nextHash).iterator();
+                                    break;
+                                } catch (ExecutionException e) {
+                                    throw new IllegalStateException(e);
+                                }
+                            }
+                        }
+
+                    }
+
+                    @Override
+                    public Value next() {
+                        if (hasNext()) {
+                            return currentIt.next();
+                        } else {
+                            throw new NoSuchElementException();
+                        }
+                    }
+
+                    @Override
+                    public void remove() {
+                        throw new UnsupportedOperationException("remove is not supported");
+                    }
+                });
+            }
+        } catch (ExecutionException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
     public Value remove(String key) {
         try {
-            String hash = id2geohash.get(key);
+            String hash = key2geohash.get(key);
             if (hash == null) {
                 return null;
             } else {
-                id2geohash.remove(key);
-                return cache.get(hash).remove(key);
+                synchronized (this) {
+                    key2geohash.remove(key);
+                    return cache.get(hash).remove(key);
+                }
             }
         } catch (ExecutionException e) {
             throw new IllegalStateException(e);
@@ -149,7 +282,7 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
     }
 
     public int size() {
-        return id2geohash.size();
+        return key2geohash.size();
     }
 
     @Override
@@ -162,12 +295,12 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
     private void writeIds() throws IOException, FileNotFoundException {
         File f = getIdsPath();
         try (BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(new GZIPOutputStream(new FileOutputStream(f)), Charset.forName("utf-8")))) {
-            for (Entry<String, String> entry : id2geohash.entrySet()) {
+            for (Entry<String, String> entry : key2geohash.entrySet()) {
                 bw.write(entry.getKey() + "\t" + entry.getValue() + "\n");
             }
         }
     }
-    
+
     private File getIdsPath() {
         return new File(dataDir, "ids.gz");
     }
@@ -175,7 +308,7 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
     @Override
     public Iterator<Value> iterator() {
         final Multimap<String, String> idsForHash = HashMultimap.create();
-        for (Entry<String, String> entry : id2geohash.entrySet()) {
+        for (Entry<String, String> entry : key2geohash.entrySet()) {
             idsForHash.put(entry.getValue(), entry.getKey());
         }
         final Iterator<String> hashIterator = idsForHash.keySet().iterator();
@@ -220,9 +353,9 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
         };
     }
 
-    private class Bucket {
+    private class Bucket implements Iterable<Value> {
         Map<String, Object> map = new ConcurrentHashMap<>();
-        Map<String,Value> geohashMap = new ConcurrentHashMap<>();
+        Map<String, Value> geohashMap = new ConcurrentHashMap<>();
         AtomicBoolean changed = new AtomicBoolean();
         private final String geoHash;
 
@@ -251,6 +384,45 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
         @SuppressWarnings("unchecked")
         private Value extractValue(Object object) {
             return (Value) ((Object[]) object)[1];
+        }
+
+        public Iterator<Value> filter(final String hashPrefix) {
+            final Iterator<Entry<String, Value>> it = geohashMap.entrySet().iterator();
+            return new Iterator<Value>() {
+                Value next = null;
+
+                @Override
+                public boolean hasNext() {
+                    if (next != null) {
+                        return true;
+                    }
+
+                    while (it.hasNext()) {
+                        Entry<String, Value> entry = it.next();
+                        if (entry.getKey().startsWith(hashPrefix)) {
+                            next = entry.getValue();
+                            return true;
+                        }
+                    }
+                    return false;
+                }
+
+                @Override
+                public Value next() {
+                    if (hasNext()) {
+                        Value result = next;
+                        next = null;
+                        return result;
+                    } else {
+                        throw new NoSuchElementException();
+                    }
+                }
+
+                @Override
+                public void remove() {
+                    throw new UnsupportedOperationException("remove is not supported");
+                }
+            };
         }
 
         public void write() {
@@ -313,6 +485,28 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
             }
             buf.deleteCharAt(buf.length() - 1);
             return new File(new File(dataDir, buf.toString()), geoHash + ".gz");
+        }
+
+        @Override
+        public Iterator<Value> iterator() {
+            final Iterator<Value> it = geohashMap.values().iterator();
+            return new Iterator<Value>() {
+
+                @Override
+                public boolean hasNext() {
+                    return it.hasNext();
+                }
+
+                @Override
+                public Value next() {
+                    return it.next();
+                }
+
+                @Override
+                public void remove() {
+                    throw new UnsupportedOperationException("remove is not supported");
+                }
+            };
         }
     }
 }
