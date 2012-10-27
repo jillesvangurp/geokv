@@ -22,11 +22,11 @@ You can put, get, and remove values as well as iterate over the entire collectio
 
 h1. How does it work?
 
-GeoKV divides the world into rectangles (a bucket) and each bucket has its own gzip file on disk with all the content for the area covered by the associated rectangle. These bucket rectangles are calculated from the latitude and longitude of each entry using a five character geohash. Geohashes are a nice way to encode coordinates that have the useful property that nearby points have the same geohash prefix. For example, a geohash with length 7 covers about a city block and all geohashes of have a rectangular shape.
+GeoKV divides the world into rectangles (a bucket) and each bucket has its own gzip file on disk with all the content for the area covered by the associated rectangle. These bucket rectangles are calculated from the latitude and longitude of each entry using a geohash with a configurable length. Geohashes are a nice way to encode coordinates that have the useful property that nearby points have the same geohash prefix. For example, a geohash with length 7 covers about a city block and all geohashes of have a rectangular shape.
 
 Each bucket file is a gzip file of lines with tab separated key, geohash, and serialized value. The name and directory of the file inside the datadir are based on the geohash prefix associated with the bucket.
 
-The store loads these files as needed and uses a guava LRU cache to keep recently accessed geohashes in memory. So, if you get and put entries in the same area, the geohashes are mostly in memory. When geohashes drop out of the cache, the data gets written to disk.
+The store loads these files as needed and uses a guava LRU cache to keep recently accessed buckets in memory. So, if you get and put entries in the same area, the buckets are mostly in memory. When buckets drop out of the cache, the data gets written to disk.
 
 When iterating or querying the store, things are always returned bucket by bucket to prevent needless disk access. To prevent wasting memory during such operations, an Iterable is returned instead of a collection.
  
