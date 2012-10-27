@@ -33,9 +33,12 @@ import com.google.common.collect.Multimap;
 import com.jillesvangurp.geo.GeoHashUtils;
 
 /**
- * GeoKV is a persistent key value store for geospatial values that caches the entries in memory for recently accessed areas.
+ * GeoKV is a persistent key value store for geospatial values that caches the entries in memory for recently accessed
+ * areas.
  * 
- * This allows one to implement algorithms that e.g. access entries in a particular area without constantly having to access the disk. 
+ * This allows one to implement algorithms that e.g. access entries in a particular area without constantly having to
+ * access the disk.
+ * 
  * @param <Value>
  */
 public class GeoKV<Value> implements Closeable, Iterable<Value> {
@@ -69,18 +72,18 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
 
     private void readIds() {
         File idsFile = getIdsPath();
-        if(idsFile.exists()) {
+        if (idsFile.exists()) {
             try {
                 try (BufferedReader r = new BufferedReader(new InputStreamReader(new GZIPInputStream(new FileInputStream(idsFile)), Charset.forName("utf-8")))) {
                     String line;
-                    while((line=r.readLine()) != null) {
-                        if(StringUtils.isNotEmpty(line)) {
+                    while ((line = r.readLine()) != null) {
+                        if (StringUtils.isNotEmpty(line)) {
                             int tab = line.indexOf('\t');
-                            if(tab < 0) {
+                            if (tab < 0) {
                                 throw new IllegalStateException("line without a tab");
                             } else {
-                                String key=line.substring(0, tab);
-                                String geoHash = line.substring(tab+1);
+                                String key = line.substring(0, tab);
+                                String geoHash = line.substring(tab + 1);
                                 id2geohash.put(key, geoHash);
                             }
                         }
@@ -93,22 +96,26 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
     }
 
     /**
-     * @param latitude a wgs84 latitude between -90 to 90
-     * @param longitude a wgs84 longitude between -180 and 180
-     * @param key the key. Keys are not allowed to be empty or to contain tabs or new lines.
+     * @param latitude
+     *            a wgs84 latitude between -90 to 90
+     * @param longitude
+     *            a wgs84 longitude between -180 and 180
+     * @param key
+     *            the key. Keys are not allowed to be empty or to contain tabs or new lines.
      * @param value
      */
     public void put(double latitude, double longitude, String key, Value value) {
         Validate.notEmpty(key);
-        if(StringUtils.contains(key, '\t') || StringUtils.contains(key, '\n')) {
+        if (StringUtils.contains(key, '\t') || StringUtils.contains(key, '\n')) {
             throw new IllegalArgumentException("key must not contain new lines or tabs");
         }
-        String hash = GeoHashUtils.encode(latitude, longitude, GEOHASH_LENGTH);        
+        String hash = GeoHashUtils.encode(latitude, longitude);
 
         try {
-            Bucket bucket = cache.get(hash);
-            id2geohash.put(key, hash);
-            bucket.put(key, value);
+            String hashPrefix = hash.substring(0, GEOHASH_LENGTH);
+            Bucket bucket = cache.get(hashPrefix);
+            id2geohash.put(key, hashPrefix);
+            bucket.put(key, hash, value);
         } catch (ExecutionException e) {
             throw new IllegalStateException(e);
         }
@@ -117,7 +124,7 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
     public Value get(String key) {
         try {
             String hash = id2geohash.get(key);
-            if(hash == null) {
+            if (hash == null) {
                 return null;
             } else {
                 return cache.get(hash).get(key);
@@ -126,11 +133,11 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
             throw new IllegalStateException(e);
         }
     }
-    
+
     public Value remove(String key) {
         try {
             String hash = id2geohash.get(key);
-            if(hash == null) {
+            if (hash == null) {
                 return null;
             } else {
                 id2geohash.remove(key);
@@ -140,7 +147,7 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
             throw new IllegalStateException(e);
         }
     }
-    
+
     public int size() {
         return id2geohash.size();
     }
@@ -154,44 +161,44 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
 
     private void writeIds() throws IOException, FileNotFoundException {
         File f = getIdsPath();
-        try(BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(new GZIPOutputStream(new FileOutputStream(f)), Charset.forName("utf-8")))) {
-            for(Entry<String, String> entry:id2geohash.entrySet()) {
-                bw.write(entry.getKey()+"\t" +entry.getValue()+"\n");
+        try (BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(new GZIPOutputStream(new FileOutputStream(f)), Charset.forName("utf-8")))) {
+            for (Entry<String, String> entry : id2geohash.entrySet()) {
+                bw.write(entry.getKey() + "\t" + entry.getValue() + "\n");
             }
         }
     }
-
+    
     private File getIdsPath() {
-        return new File(dataDir,"ids.gz");
+        return new File(dataDir, "ids.gz");
     }
 
     @Override
     public Iterator<Value> iterator() {
         final Multimap<String, String> idsForHash = HashMultimap.create();
-        for(Entry<String, String> entry: id2geohash.entrySet()) {
+        for (Entry<String, String> entry : id2geohash.entrySet()) {
             idsForHash.put(entry.getValue(), entry.getKey());
         }
         final Iterator<String> hashIterator = idsForHash.keySet().iterator();
-        
+
         return new Iterator<Value>() {
-            Value next=null;
-            String currentHash=null;
+            Value next = null;
+            String currentHash = null;
             Iterator<String> keyIterator = null;
 
             @Override
             public boolean hasNext() {
-                if(next!=null) {
+                if (next != null) {
                     return true;
                 } else {
-                    if(currentHash == null && hashIterator.hasNext()) {
+                    if (currentHash == null && hashIterator.hasNext()) {
                         currentHash = hashIterator.next();
                         keyIterator = idsForHash.get(currentHash).iterator();
                     }
-                    if(!keyIterator.hasNext() && hashIterator.hasNext()) {
-                        keyIterator = idsForHash.get(hashIterator.next()).iterator();                    
+                    if (!keyIterator.hasNext() && hashIterator.hasNext()) {
+                        keyIterator = idsForHash.get(hashIterator.next()).iterator();
                     }
-                    if(keyIterator.hasNext()) {
-                        next=get(keyIterator.next());
+                    if (keyIterator.hasNext()) {
+                        next = get(keyIterator.next());
                         return true;
                     } else {
                         return false;
@@ -202,7 +209,7 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
             @Override
             public Value next() {
                 Value result = next;
-                next=null;
+                next = null;
                 return result;
             }
 
@@ -214,7 +221,8 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
     }
 
     private class Bucket {
-        Map<String, Value> map = new ConcurrentHashMap<>();
+        Map<String, Object> map = new ConcurrentHashMap<>();
+        Map<String,Value> geohashMap = new ConcurrentHashMap<>();
         AtomicBoolean changed = new AtomicBoolean();
         private final String geoHash;
 
@@ -223,30 +231,41 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
         }
 
         public Value remove(String key) {
-            return map.remove(key);
+            return extractValue(map.remove(key));
         }
 
-        public void put(String key, Value value) {
-            map.put(key, value);
+        public void put(String key, String hash, Value value) {
+            map.put(key, new Object[] { hash, value });
+            geohashMap.put(hash, value);
             changed.set(true);
         }
 
         public Value get(String key) {
-            return map.get(key);
+            return extractValue(map.get(key));
+        }
+
+        private String extractGeoHash(Object object) {
+            return (String) ((Object[]) object)[0];
+        }
+
+        @SuppressWarnings("unchecked")
+        private Value extractValue(Object object) {
+            return (Value) ((Object[]) object)[1];
         }
 
         public void write() {
             if (changed.get()) {
                 try {
                     File f = getPath(geoHash);
-                    
+
                     File dir = f.getParentFile();
-                    if(!dir.exists()) {
+                    if (!dir.exists()) {
                         dir.mkdirs();
                     }
-                    try(BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(new GZIPOutputStream(new FileOutputStream(f)), Charset.forName("utf-8")))) {
-                        for(Entry<String, Value> entry:map.entrySet()) {
-                            bw.write(entry.getKey() +"\t" + processor.serialize(entry.getValue()) + "\n");
+                    try (BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(new GZIPOutputStream(new FileOutputStream(f)), Charset.forName("utf-8")))) {
+                        for (Entry<String, Object> entry : map.entrySet()) {
+                            Object object = entry.getValue();
+                            bw.write(entry.getKey() + "\t" + extractGeoHash(object) + "\t" + processor.serialize(extractValue(object)) + "\n");
                         }
                     }
                 } catch (IOException e) {
@@ -257,19 +276,26 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
 
         public void read() {
             File f = getPath(geoHash);
-            if(f.exists()) {
+            if (f.exists()) {
                 try (BufferedReader r = new BufferedReader(new InputStreamReader(new GZIPInputStream(new FileInputStream(f)), Charset.forName("utf-8")))) {
                     String line;
-                    while((line=r.readLine()) != null) {
-                        if(StringUtils.isNotEmpty(line)) {
+                    while ((line = r.readLine()) != null) {
+                        if (StringUtils.isNotEmpty(line)) {
                             int tab = line.indexOf('\t');
-                            if(tab < 0) {
+                            if (tab < 0) {
                                 throw new IllegalStateException("line without a tab");
-                            } else {
-                                String key=line.substring(0, tab);
-                                String blob = line.substring(tab+1);
-                                map.put(key, processor.parse(blob));
                             }
+                            String key = line.substring(0, tab);
+                            String rest = line.substring(tab + 1);
+                            tab = rest.indexOf('\t');
+                            if (tab < 0) {
+                                throw new IllegalStateException("line without second tab");
+                            }
+                            String hash = rest.substring(0, tab);
+                            String blob = rest.substring(tab + 1);
+                            Value value = processor.parse(blob);
+                            map.put(key, new Object[] { hash, value });
+                            geohashMap.put(hash, value);
                         }
                     }
                 } catch (IOException e) {
@@ -280,13 +306,13 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
 
         private File getPath(String hash) {
             StringBuilder buf = new StringBuilder();
-            
-            for(char c: hash.toCharArray()) {
+
+            for (char c : hash.toCharArray()) {
                 buf.append(c);
                 buf.append(File.separatorChar);
             }
-            buf.deleteCharAt(buf.length()-1);
-            return new File(new File(dataDir, buf.toString()), geoHash+".gz");
+            buf.deleteCharAt(buf.length() - 1);
+            return new File(new File(dataDir, buf.toString()), geoHash + ".gz");
         }
     }
 }
