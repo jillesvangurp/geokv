@@ -37,6 +37,7 @@ h1. Caveats
 * Most IO exceptions are re-thrown as IllegalStateExceptions and no attempt is made to recover. That keeps the code small and simple, which is nice, but it has certain implications for robustness and reliability.
 * GeoKV should be thread safe. However, I've not done any elaborate testing for this and there may be issues here. The put and remove operations contain synchronized blocks and the various data structures used tend to be suitable for concurrent usage.
 * GeoKV could be used as a server but is not designed for that usage currently. Instead it is intended to be used for processing of geo spatial data in a way that makes efficient usage of memory and disk. These useful properties also make it of interest for server usage but more work would be needed to turn it into a proper server product.
+* You should not change the bucket size after you have picked one and written some data. GeoKV does not support changing this currently.
 * Given the above, you might want to back your data up regularly.
 * Given the above, you should probably not run this in a server side environment and certainly not in a production environment. If you do so anyway, I'd be happy to accept patches and bug reports and work with you to improve things.
 
