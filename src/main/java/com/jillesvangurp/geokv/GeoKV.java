@@ -34,6 +34,7 @@ import com.google.common.cache.RemovalListener;
 import com.google.common.cache.RemovalNotification;
 import com.google.common.collect.HashMultimap;
 import com.google.common.collect.Multimap;
+import com.jillesvangurp.geo.GeoGeometry;
 import com.jillesvangurp.geo.GeoHashUtils;
 
 /**
@@ -161,10 +162,19 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
         };
     }
     
+    public Iterable<Value> filterBbox(double minLat, double maxLat, double minLon, double maxLon) {
+        double[][] polygon = GeoGeometry.bbox2polygon(new double[] {minLat,maxLat,minLon,maxLon});
+        return filterPolygon(polygon);
+    }
+    
+    public Iterable<Value> filterPolygon(double[][] polygon) {
+        Set<String> hashes = GeoHashUtils.getGeoHashesForPolygon(polygon);
+        return filterGeoHashes(hashes.toArray(new String[0]));
+    }
+
     public Iterable<Value> filterRadius(double latitude, double longitude, long meters) {
         Set<String> hashes = GeoHashUtils.geoHashesForCircle(GeoHashUtils.getSuitableHashLength(meters, latitude, longitude)+2, latitude, longitude, meters);
-        String[] array = hashes.toArray(new String[0]);
-        return filterGeoHashes(array);
+        return filterGeoHashes(hashes.toArray(new String[0]));
     }
 
     public Iterable<Value> filterGeoHashes(final String... hashes) {
