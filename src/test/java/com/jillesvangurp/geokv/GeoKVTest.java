@@ -13,7 +13,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Iterator;
 import java.util.Random;
-import java.util.Set;
 
 import org.apache.commons.io.FileUtils;
 import org.testng.annotations.AfterMethod;
@@ -159,13 +158,15 @@ public class GeoKVTest {
         try(GeoKV<String> kv = kv()) {
             fillKv(kv);
             Iterator<String> hashes = kv.bucketGeoHashes().iterator();
-            int count=0;
-            for(String hash: kv.filterGeoHashes(hashes.next(),hashes.next(),hashes.next())) {
-                count++;
-                assertThat(hash, notNullValue());
-            }            
-            assertThat(count, greaterThan(2));
+            assertThat(countIterable(kv.filterGeoHashes(hashes.next(),hashes.next(),hashes.next())), greaterThan(2));
         }
+    }
+    
+    public void shouldIterateWithCircle() throws IOException {
+        try(GeoKV<String> kv = kv()) {
+            fillKv(kv);
+            assertThat(countIterable(kv.filterRadius(52, 13, 200000)), greaterThan(99));
+        }        
     }
     
     public static class CoordinateRandomizer {
@@ -188,5 +189,12 @@ public class GeoKVTest {
         double[] point = CoordinateRandomizer.next(baseLatitude,baseLongitude,div);
         String hash = GeoHashUtils.encode(point[0], point[1]);
         kv.put(point[0], point[1], hash, hash);
+    }
+    private <T> int countIterable(Iterable<T> iterable) {
+        int count=0;
+        for(@SuppressWarnings("unused") T value: iterable) {
+            count++;
+        }
+        return count;
     }
 }

@@ -160,6 +160,12 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
             }
         };
     }
+    
+    public Iterable<Value> filterRadius(double latitude, double longitude, long meters) {
+        Set<String> hashes = GeoHashUtils.geoHashesForCircle(GeoHashUtils.getSuitableHashLength(meters, latitude, longitude)+2, latitude, longitude, meters);
+        String[] array = hashes.toArray(new String[0]);
+        return filterGeoHashes(array);
+    }
 
     public Iterable<Value> filterGeoHashes(final String... hashes) {
         String[] sortedHashes = Arrays.copyOf(hashes, hashes.length);
@@ -178,6 +184,9 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
                 if (currentIt == null || !currentIt.hasNext()) {
                     if(i<hashes.length) {
                         currentIt = filterGeoHash(hashes[i++]).iterator();
+                        while(!currentIt.hasNext() && i<hashes.length) {
+                            currentIt = filterGeoHash(hashes[i++]).iterator();                            
+                        }
                     } else {
                         return false;
                     }
@@ -236,19 +245,21 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
                             if (nextHash.startsWith(hash)) {
                                 try {
                                     currentIt = cache.get(nextHash).iterator();
-                                    break;
+                                    if(currentIt.hasNext()) {
+                                        break;
+                                    }
                                 } catch (ExecutionException e) {
                                     throw new IllegalStateException(e);
                                 }
-                            }
+                            } 
                         }
-
                     }
 
                     @Override
                     public Value next() {
                         if (hasNext()) {
-                            return currentIt.next();
+                            Value next = currentIt.next();
+                            return next;
                         } else {
                             throw new NoSuchElementException();
                         }
@@ -385,7 +396,7 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
         private Value extractValue(Object object) {
             return (Value) ((Object[]) object)[1];
         }
-
+        
         public Iterator<Value> filter(final String hashPrefix) {
             final Iterator<Entry<String, Value>> it = geohashMap.entrySet().iterator();
             return new Iterator<Value>() {
