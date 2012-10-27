@@ -48,7 +48,7 @@ public class GeoKVTest {
     }
     
     private GeoKV<String> kv() {
-        return new GeoKV<>(dataDir.toFile().getAbsolutePath(), 5, stringProcessor);
+        return new GeoKV<>(dataDir.toFile().getAbsolutePath(), 5,5, stringProcessor);
     }
 
     public void shouldPutAndGet() throws IOException {        

@@ -47,15 +47,200 @@ import com.jillesvangurp.geo.GeoHashUtils;
  * @param <Value>
  */
 public class GeoKV<Value> implements Closeable, Iterable<Value> {
-    private static final int GEOHASH_LENGTH = 5;
+    private final int bucketSize;
     private final String dataDir;
     private final Map<String, String> key2geohash;
     private final LoadingCache<String, Bucket> cache;
     private final ValueProcessor<Value> processor;
     private final Set<String> geoHashes;
 
-    public GeoKV(String dataDir, int buckets, ValueProcessor<Value> processor) {
+    /**
+     * Create a new GeoKV.
+     * 
+     * You will need to take a few important decisions regarding bucket size and the amount of buckets you can cache.
+     * 
+     * More and bigger is better since you will use the disk much less and in more efficient big bursts. This comes at
+     * the price of more memory. Also, you should take into account the data density in your data set. Typical
+     * metropoles in e.g. China or South America tend to have a high density of data for e.g. POI data. In that case, a
+     * geoHash of 4 would not be appropriate since that would cover an area that might potentially contain millions of
+     * data points. Something in the order of 6 or 7 would bring this number down to a maximum of maybe a few thousand,
+     * which is manageable as a worst case scenario.
+     * 
+     * Likewise, if you are planning to run lots of queries covering large areas, you will benefit from dedicating
+     * heap-space to caching more buckets. If on the other hand your processing is highly localized, you don't benefit
+     * from having more than a handful of buckets.
+     * 
+     * If you are uncertain, go with sensible defaults of e.g. a bucketSize of 6 and having 200 buckets in memory.
+     * 
+     * You may find the table below with dimensions for geohashes at different latitudes useful to decide on a good hash
+     * code size. As you can see the horizontal width depends on the latitude. The height does not vary.
+     * <table border="1">
+     * <tr>
+     * <td>latitude</td>
+     * <td>1</td>
+     * <td>2</td>
+     * <td>3</td>
+     * <td>4</td>
+     * <td>5</td>
+     * <td>6</td>
+     * <td>7</td>
+     * <td>8</td>
+     * <td>9</td>
+     * <td>10</td>
+     * <td>11</td>
+     * <td>12</td>
+     * </tr>
+     * <tr>
+     * <td>90.0</td>
+     * <td>3491488.98x5003771.7</td>
+     * <td>122418.86x625471.46</td>
+     * <td>3837.36x156367.87</td>
+     * <td>119.93x19545.98</td>
+     * <td>3.75x4886.5</td>
+     * <td>0.12x610.81</td>
+     * <td>0.0x152.7</td>
+     * <td>0.0x19.09</td>
+     * <td>0.0x4.77</td>
+     * <td>0.0x0.6</td>
+     * <td>0.0x0.15</td>
+     * <td>0.0x0.02</td>
+     * </tr>
+     * <tr>
+     * <td>80.0</td>
+     * <td>3491488.98x5003771.7</td>
+     * <td>243669.87x625471.46</td>
+     * <td>30505.12x156367.87</td>
+     * <td>6801.36x19545.98</td>
+     * <td>850.17x4886.5</td>
+     * <td>212.2x610.81</td>
+     * <td>26.52x152.7</td>
+     * <td>6.63x19.09</td>
+     * <td>0.83x4.77</td>
+     * <td>0.21x0.6</td>
+     * <td>0.03x0.15</td>
+     * <td>0.01x0.02</td>
+     * </tr>
+     * <tr>
+     * <td>70.0</td>
+     * <td>3491488.98x5003771.7</td>
+     * <td>478058.65x625471.46</td>
+     * <td>56274.79x156367.87</td>
+     * <td>13395.26x19545.98</td>
+     * <td>1674.41x4886.5</td>
+     * <td>417.83x610.81</td>
+     * <td>52.23x152.7</td>
+     * <td>13.06x19.09</td>
+     * <td>1.63x4.77</td>
+     * <td>0.41x0.6</td>
+     * <td>0.05x0.15</td>
+     * <td>0.01x0.02</td>
+     * </tr>
+     * <tr>
+     * <td>60.0</td>
+     * <td>3491488.98x5003771.7</td>
+     * <td>694214.17x625471.46</td>
+     * <td>80387.66x156367.87</td>
+     * <td>19580.57x19545.98</td>
+     * <td>2444.33x4886.5</td>
+     * <td>610.88x610.81</td>
+     * <td>76.35x152.7</td>
+     * <td>19.09x19.09</td>
+     * <td>2.39x4.77</td>
+     * <td>0.6x0.6</td>
+     * <td>0.07x0.15</td>
+     * <td>0.02x0.02</td>
+     * </tr>
+     * <tr>
+     * <td>50.0</td>
+     * <td>3491488.98x5003771.7</td>
+     * <td>883838.56x625471.46</td>
+     * <td>102133.77x156367.87</td>
+     * <td>25168.62x19545.98</td>
+     * <td>3143.21x4886.5</td>
+     * <td>785.26x610.81</td>
+     * <td>98.16x152.7</td>
+     * <td>24.54x19.09</td>
+     * <td>3.07x4.77</td>
+     * <td>0.77x0.6</td>
+     * <td>0.1x0.15</td>
+     * <td>0.02x0.02</td>
+     * </tr>
+     * <tr>
+     * <td>40.0</td>
+     * <td>5003771.7x5003771.7</td>
+     * <td>966365.48x625471.46</td>
+     * <td>120872.77x156367.87</td>
+     * <td>29988.95x19545.98</td>
+     * <td>3743.81x4886.5</td>
+     * <td>935.88x610.81</td>
+     * <td>116.98x152.7</td>
+     * <td>29.24x19.09</td>
+     * <td>3.66x4.77</td>
+     * <td>0.91x0.6</td>
+     * <td>0.11x0.15</td>
+     * <td>0.03x0.02</td>
+     * </tr>
+     * <tr>
+     * <td>30.0</td>
+     * <td>5003771.7x5003771.7</td>
+     * <td>1102838.21x625471.46</td>
+     * <td>136052.82x156367.87</td>
+     * <td>33894.53x19545.98</td>
+     * <td>4233.08x4886.5</td>
+     * <td>1057.98x610.81</td>
+     * <td>132.25x152.7</td>
+     * <td>33.06x19.09</td>
+     * <td>4.13x4.77</td>
+     * <td>1.03x0.6</td>
+     * <td>0.13x0.15</td>
+     * <td>0.03x0.02</td>
+     * </tr>
+     * <tr>
+     * <td>20.0</td>
+     * <td>5003771.7x5003771.7</td>
+     * <td>1196915.14x625471.46</td>
+     * <td>147226.82x156367.87</td>
+     * <td>36766.23x19545.98</td>
+     * <td>4591.95x4886.5</td>
+     * <td>1147.99x610.81</td>
+     * <td>143.49x152.7</td>
+     * <td>35.87x19.09</td>
+     * <td>4.48x4.77</td>
+     * <td>1.12x0.6</td>
+     * <td>0.14x0.15</td>
+     * <td>0.04x0.02</td>
+     * </tr>
+     * <tr>
+     * <td>10.0</td>
+     * <td>5003771.7x5003771.7</td>
+     * <td>1244900.01x625471.46</td>
+     * <td>154065.65x156367.87</td>
+     * <td>38516.44x19545.98</td>
+     * <td>4812.62x4886.5</td>
+     * <td>1203.07x610.81</td>
+     * <td>150.38x152.7</td>
+     * <td>37.6x19.09</td>
+     * <td>4.7x4.77</td>
+     * <td>1.17x0.6</td>
+     * <td>0.15x0.15</td>
+     * <td>0.04x0.02</td>
+     * </tr>
+     * </table>
+     * *
+     * 
+     * @param dataDir
+     *            GeoKV will store all its data here and be able to read an existing store if you have one.
+     * @param cacheSize
+     *            the number of buckets that GeoKV will keep in memory.
+     * @param bucketSize
+     *            the geoHash length for a bucket. A reasonable size will typically be between 4 an 8. Bigger buckets
+     *            with a shorter geoHash contain more data.
+     * @param processor
+     *            processor that can serialize and parse data for storage.
+     */
+    public GeoKV(String dataDir, int cacheSize, int bucketSize, ValueProcessor<Value> processor) {
         this.dataDir = dataDir;
+        this.bucketSize = bucketSize;
         this.processor = processor;
         this.key2geohash = new ConcurrentHashMap<String, String>();
         this.geoHashes = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
@@ -67,7 +252,7 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
                 return bucket;
             }
         };
-        cache = CacheBuilder.newBuilder().maximumSize(buckets).removalListener(new RemovalListener<String, Bucket>() {
+        cache = CacheBuilder.newBuilder().maximumSize(cacheSize).removalListener(new RemovalListener<String, Bucket>() {
             @Override
             public void onRemoval(RemovalNotification<String, Bucket> notification) {
                 // make sure changed buckets are written on eviction
@@ -128,7 +313,7 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
         String hash = GeoHashUtils.encode(latitude, longitude);
 
         try {
-            String hashPrefix = hash.substring(0, GEOHASH_LENGTH);
+            String hashPrefix = hash.substring(0, bucketSize);
             Bucket bucket = cache.get(hashPrefix);
             synchronized (this) {
                 key2geohash.put(key, hashPrefix);
@@ -161,19 +346,19 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
             }
         };
     }
-    
+
     public Iterable<Value> filterBbox(double minLat, double maxLat, double minLon, double maxLon) {
-        double[][] polygon = GeoGeometry.bbox2polygon(new double[] {minLat,maxLat,minLon,maxLon});
+        double[][] polygon = GeoGeometry.bbox2polygon(new double[] { minLat, maxLat, minLon, maxLon });
         return filterPolygon(polygon);
     }
-    
+
     public Iterable<Value> filterPolygon(double[][] polygon) {
         Set<String> hashes = GeoHashUtils.getGeoHashesForPolygon(polygon);
         return filterGeoHashes(hashes.toArray(new String[0]));
     }
 
     public Iterable<Value> filterRadius(double latitude, double longitude, long meters) {
-        Set<String> hashes = GeoHashUtils.geoHashesForCircle(GeoHashUtils.getSuitableHashLength(meters, latitude, longitude)+2, latitude, longitude, meters);
+        Set<String> hashes = GeoHashUtils.geoHashesForCircle(GeoHashUtils.getSuitableHashLength(meters, latitude, longitude) + 2, latitude, longitude, meters);
         return filterGeoHashes(hashes.toArray(new String[0]));
     }
 
@@ -188,14 +373,14 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
 
             @Override
             public boolean hasNext() {
-                if(next != null) {
+                if (next != null) {
                     return true;
                 }
                 if (currentIt == null || !currentIt.hasNext()) {
-                    if(i<hashes.length) {
+                    if (i < hashes.length) {
                         currentIt = filterGeoHash(hashes[i++]).iterator();
-                        while(!currentIt.hasNext() && i<hashes.length) {
-                            currentIt = filterGeoHash(hashes[i++]).iterator();                            
+                        while (!currentIt.hasNext() && i < hashes.length) {
+                            currentIt = filterGeoHash(hashes[i++]).iterator();
                         }
                     } else {
                         return false;
@@ -228,9 +413,9 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
 
     public Iterable<Value> filterGeoHash(final String hash) {
         try {
-            if (hash.length() >= GEOHASH_LENGTH) {
+            if (hash.length() >= bucketSize) {
                 // only one bucket
-                Bucket bucket = cache.get(hash.substring(0, GEOHASH_LENGTH));
+                Bucket bucket = cache.get(hash.substring(0, bucketSize));
                 return toIterable(bucket.filter(hash));
             } else {
                 final Iterator<String> geoHashesIterator = geoHashes.iterator();
@@ -255,13 +440,13 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
                             if (nextHash.startsWith(hash)) {
                                 try {
                                     currentIt = cache.get(nextHash).iterator();
-                                    if(currentIt.hasNext()) {
+                                    if (currentIt.hasNext()) {
                                         break;
                                     }
                                 } catch (ExecutionException e) {
                                     throw new IllegalStateException(e);
                                 }
-                            } 
+                            }
                         }
                     }
 
@@ -406,7 +591,7 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
         private Value extractValue(Object object) {
             return (Value) ((Object[]) object)[1];
         }
-        
+
         public Iterator<Value> filter(final String hashPrefix) {
             final Iterator<Entry<String, Value>> it = geohashMap.entrySet().iterator();
             return new Iterator<Value>() {
