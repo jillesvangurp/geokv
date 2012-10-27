@@ -18,11 +18,11 @@ h1. Usage
 
 The java API is very similar to the Map API, with the difference that the put operation requires a latitude and longitude in addition to the key. Keys are always Strings, Values can be any type. Since we have to persist, you have to tell it how to do that by providing a ValueProcessor with a serialize and parse method.
 
-You can put, get, and remove values as well as iterate over the entire collection. 
+You can put, get, and remove values as well as iterate over the entire collection. Also, several filter operations are provided that allow you to iterate over values inside a bounding box, polygon or circle. Because you iterate, you don't actually have to have the entire result set in memory.
 
 h1. How does it work?
 
-GeoKV divides the world into rectangles (a bucket) and each bucket has its own gzip file on disk with all the content for the area covered by the associated rectangle. These bucket rectangles are calculated from the latitude and longitude of each entry using a five character geohash. Geohashes are a nice way to encode coordinates that have the useful property that nearby points have the same geohash prefix. For example, a geohash with length 5 covers about a city block and all geohashes of have a rectangular shape.
+GeoKV divides the world into rectangles (a bucket) and each bucket has its own gzip file on disk with all the content for the area covered by the associated rectangle. These bucket rectangles are calculated from the latitude and longitude of each entry using a five character geohash. Geohashes are a nice way to encode coordinates that have the useful property that nearby points have the same geohash prefix. For example, a geohash with length 7 covers about a city block and all geohashes of have a rectangular shape.
 
 Each bucket file is a gzip file of lines with tab separated key, geohash, and serialized value. The name and directory of the file inside the datadir are based on the geohash prefix associated with the bucket.
 
@@ -44,9 +44,9 @@ Consider yourself warned. Otherwise it is all good :-).
 
 h1. Installation
 
-It's a maven project. So, checking it out and doing a mvn clean install should do the trick. 
+It's a maven project. So, checking it out and doing a mvn clean install should do the trick. You will need my geotools project as well, which you can find here: https://github.com/jillesvangurp/geotools.
 
-Alternatively, you may use my github maven repository, which is where I deploy releases for some of my projects. In order to use this, you have to configure your settings.xml as explained here: https://github.com/jillesvangurp/mvnrepo
+*TODO, actually release stable artifact*. Alternatively, you may use my github maven repository, which is where I deploy releases for some of my projects. In order to use this, you have to configure your settings.xml as explained here: https://github.com/jillesvangurp/mvnrepo
 
 Then you can add the following dependency:
 
@@ -68,4 +68,4 @@ If anyone wants to fix stuff just send me a pull request.
 
 h1. Changelog
 
-* unreleased as of yet, keep an eye on the commit log
+* unreleased as of yet, keep an eye on the commit log. Meanwhile the snapshots should be fine as is.
