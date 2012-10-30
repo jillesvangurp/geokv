@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Iterator;
+import java.util.Map.Entry;
 import java.util.Random;
 
 import org.apache.commons.io.FileUtils;
@@ -131,8 +132,8 @@ public class GeoKVTest {
         try(GeoKV<String> kv = kv()) {
             fillKv(kv);
             int count=0;
-            for(String v: kv.filterGeoHash("u33")) {
-                assertThat("only entries with the right hash prefix should be returned",v.startsWith("u"));
+            for(Entry<String,String> v: kv.filterGeoHash("u33")) {
+                assertThat("only entries with the right hash prefix should be returned",v.getValue().startsWith("u"));
                 count++;
             }
             assertThat("only return stuff near berlin (u33)",count, allOf(greaterThan(0), lessThan(101)));
@@ -145,8 +146,8 @@ public class GeoKVTest {
                 String hash=kv.get(id);
                 String prefix = hash.substring(0, 5);
                 int count=0;
-                for(String h: kv.filterGeoHash(prefix)) {
-                    assertThat("", h.startsWith(prefix));
+                for(Entry<String,String> h: kv.filterGeoHash(prefix)) {
+                    assertThat("", h.getValue().startsWith(prefix));
                     count++;
                 }
                 assertThat(count, greaterThan(0));
