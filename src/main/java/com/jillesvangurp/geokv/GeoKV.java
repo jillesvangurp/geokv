@@ -36,6 +36,8 @@ import com.google.common.collect.HashMultimap;
 import com.google.common.collect.Multimap;
 import com.jillesvangurp.geo.GeoGeometry;
 import com.jillesvangurp.geo.GeoHashUtils;
+import com.jillesvangurp.iterables.Filter;
+import com.jillesvangurp.iterables.FilteringIterable;
 
 /**
  * GeoKV is a persistent key value store for geospatial values that caches the entries in memory for recently accessed
@@ -357,22 +359,27 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
         return filterGeoHashes(hashes.toArray(new String[0]));
     }
 
-    public Iterable<Entry<String, Value>> filterRadius(double latitude, double longitude, long meters) {
-        Set<String> hashes = GeoHashUtils.geoHashesForCircle(GeoHashUtils.getSuitableHashLength(meters, latitude, longitude), latitude, longitude, meters);
-        return filterGeoHashes(hashes.toArray(new String[0]));
+//    public Iterable<Entry<String, Value>> filterRadius(double latitude, double longitude, double meters) {
+//        Set<String> hashes = GeoHashUtils.geoHashesForCircle(GeoHashUtils.getSuitableHashLength(meters, latitude, longitude), latitude, longitude, meters);
+//        return filterGeoHashes(hashes.toArray(new String[0]));
+//    }
+
+    public Iterable<Entry<String, Value>> filterRadius(final double latitude, final double longitude, final double meters) {
+        double[] tr = GeoGeometry.translate(latitude, longitude, meters, meters);
+        double[] tl = GeoGeometry.translate(latitude, longitude, meters, -meters);
+        double[] br = GeoGeometry.translate(latitude, longitude, -meters, meters);
+        double[] bl = GeoGeometry.translate(latitude, longitude, -meters, -meters);
+
+        Set<String> hashes = GeoHashUtils.getGeoHashesForPolygon(GeoHashUtils.getSuitableHashLength(meters, latitude, longitude),tr, tl, bl, br);
+
+        return new FilteringIterable<Entry<String, Value>>(filterGeoHashes(hashes.toArray(new String[0])), new Filter<Entry<String, Value>>() {
+            @Override
+            public boolean passes(Entry<String, Value> entry) {
+                return GeoGeometry.distance(new double[] { latitude, longitude }, GeoHashUtils.decode(entry.getKey())) <= meters;
+            }
+        });
     }
-    
-    public Iterable<Entry<String, Value>> filterRadiusFast(double latitude, double longitude, long meters) {
-        double[] tr = GeoGeometry.translate(latitude, longitude, meters, meters); 
-        double[] tl = GeoGeometry.translate(latitude, longitude, meters, -meters); 
-        double[] br = GeoGeometry.translate(latitude, longitude, -meters, meters); 
-        double[] bl = GeoGeometry.translate(latitude, longitude, -meters, -meters); 
-                
-        Set<String> hashes = GeoHashUtils.getGeoHashesForPolygon(tr,tl,bl,br);
-        
-        return filterGeoHashes(hashes .toArray(new String[0]));
-    }
-    
+
     public Iterable<Entry<String, Value>> filterGeoHashes(final String... hashes) {
         String[] sortedHashes = Arrays.copyOf(hashes, hashes.length);
         Arrays.sort(sortedHashes);
@@ -428,7 +435,7 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
                 // only one bucket
                 Bucket bucket = cache.get(hash.substring(0, bucketSize));
                 return toIterable(bucket.filter(hash));
-                
+
             } else {
                 final Iterator<String> geoHashesIterator = geoHashes.iterator();
                 // multiple buckets
