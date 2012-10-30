@@ -32,6 +32,7 @@ When iterating or querying the store, things are always returned bucket by bucke
  
 h1. Caveats
 
+* When randomly accessing entries, performance may suffer because loading and unloading buckets is expensive. This may be an issue when ingesting large amounts of unsorted content.
 * GeoKV is not a transactional store nor does it do atomic writes. Instead it is an in memory store that occasionally accesses the disk and in fact tries to not do that too often in order to keep things fast. 
 * GeoKV provides no protection against data corruption. So, if you run out of memory or experience some other failure, you may lose data and/or end up with a corrupted store. Should this happen, you may be able to recover some of the data by checking the gz files and regenerating ids.gz with a script (not provided). 
 * Most IO exceptions are re-thrown as IllegalStateExceptions and no attempt is made to recover. That keeps the code small and simple, which is nice, but it has certain implications for robustness and reliability.
