@@ -576,6 +576,7 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
 
     private class Bucket implements Iterable<Entry<String, Value>> {
         Map<String, Object> map = new ConcurrentHashMap<>();
+        // FIXME use multi map! Right now only one value is stored per unique coordinate
         Map<String, Value> geohashMap = new ConcurrentHashMap<>();
         AtomicBoolean changed = new AtomicBoolean();
         private final String geoHash;
