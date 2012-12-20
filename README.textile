@@ -1,6 +1,6 @@
 h1. Introduction
 
-GeoKV is a persistent store for geo spatial data that allows you to efficiently read/write geospatial data optimized for the efficient processing of this data under the assumption that at any time you access data in very specific regions.
+GeoKV is a persistent key value store for data with a latitude/longitude that allows you to efficiently read/write this data and that is optimized for the efficient processing of this data under the assumption that at any time you access data in very specific regions.
 
 The GeoKV also allows for querying using bounding boxes, polygons or circles with a radius. This particular feature is of course backed by my other GitHub project: geotools.
 
