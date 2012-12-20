@@ -13,6 +13,7 @@ import java.io.OutputStreamWriter;
 import java.nio.charset.Charset;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -42,10 +43,10 @@ import com.jillesvangurp.iterables.FilteringIterable;
 /**
  * GeoKV is a persistent key value store for geospatial values that caches the entries in memory for recently accessed
  * areas.
- * 
+ *
  * This allows one to implement algorithms that e.g. access entries in a particular area without constantly having to
  * access the disk.
- * 
+ *
  * @param <Value>
  */
 public class GeoKV<Value> implements Closeable, Iterable<Value> {
@@ -58,22 +59,22 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
 
     /**
      * Create a new GeoKV.
-     * 
+     *
      * You will need to take a few important decisions regarding bucket size and the amount of buckets you can cache.
-     * 
+     *
      * More and bigger is better since you will use the disk much less and in more efficient big bursts. This comes at
      * the price of more memory. Also, you should take into account the data density in your data set. Typical
      * metropoles in e.g. China or South America tend to have a high density of data for e.g. POI data. In that case, a
      * geoHash of 4 would not be appropriate since that would cover an area that might potentially contain millions of
      * data points. Something in the order of 6 or 7 would bring this number down to a maximum of maybe a few thousand,
      * which is manageable as a worst case scenario.
-     * 
+     *
      * Likewise, if you are planning to run lots of queries covering large areas, you will benefit from dedicating
      * heap-space to caching more buckets. If on the other hand your processing is highly localized, you don't benefit
      * from having more than a handful of buckets.
-     * 
+     *
      * If you are uncertain, go with sensible defaults of e.g. a bucketSize of 6 and having 200 buckets in memory.
-     * 
+     *
      * You may find the table below with dimensions for geohashes at different latitudes useful to decide on a good hash
      * code size. As you can see the horizontal width depends on the latitude. The height does not vary.
      * <table border="1">
@@ -229,7 +230,7 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
      * </tr>
      * </table>
      * *
-     * 
+     *
      * @param dataDir
      *            GeoKV will store all its data here and be able to read an existing store if you have one.
      * @param cacheSize
@@ -575,9 +576,8 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
     }
 
     private class Bucket implements Iterable<Entry<String, Value>> {
-        Map<String, Object> map = new ConcurrentHashMap<>();
-        // FIXME use multi map! Right now only one value is stored per unique coordinate
-        Map<String, Value> geohashMap = new ConcurrentHashMap<>();
+        Map<String, Object> map = new HashMap<>();
+        Multimap<String, Value> geohashMap = HashMultimap.create();
         AtomicBoolean changed = new AtomicBoolean();
         private final String geoHash;
 
@@ -609,7 +609,7 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
         }
 
         public Iterator<Entry<String, Value>> filter(final String hashPrefix) {
-            final Iterator<Entry<String, Value>> it = geohashMap.entrySet().iterator();
+            final Iterator<Entry<String, Value>> it = geohashMap.entries().iterator();
             return new Iterator<Entry<String, Value>>() {
                 Entry<String, Value> next = null;
 
@@ -711,7 +711,7 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
 
         @Override
         public Iterator<Entry<String, Value>> iterator() {
-            final Iterator<Entry<String, Value>> it = geohashMap.entrySet().iterator();
+            final Iterator<Entry<String, Value>> it = geohashMap.entries().iterator();
             return new Iterator<Entry<String, Value>>() {
 
                 @Override
