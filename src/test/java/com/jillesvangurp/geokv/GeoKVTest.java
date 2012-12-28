@@ -26,33 +26,33 @@ import com.jillesvangurp.geo.GeoHashUtils;
 @Test
 public class GeoKVTest {
     ValueProcessor<String> stringProcessor = new ValueProcessor<String>() {
-        
+
         @Override
         public String serialize(String v) {
             return v;
         }
-        
+
         @Override
         public String parse(String blob) {
             return blob;
         }
     };
     private Path dataDir;
-    
+
     @BeforeMethod
     public void before() throws IOException {
-        dataDir = Files.createTempDirectory("geokvdatadir");        
+        dataDir = Files.createTempDirectory("geokvdatadir");
     }
     @AfterMethod
     public void afterEach() throws IOException {
         FileUtils.deleteDirectory(dataDir.toFile());
     }
-    
+
     private GeoKV<String> kv() {
         return new GeoKV<>(dataDir.toFile().getAbsolutePath(), 5,5, stringProcessor);
     }
 
-    public void shouldPutAndGet() throws IOException {        
+    public void shouldPutAndGet() throws IOException {
         try(GeoKV<String> kv = kv()) {
             for(int i=0; i<90 ; i++) {
                 kv.put(i, i, ""+i, ""+i);
@@ -61,11 +61,11 @@ public class GeoKVTest {
             assertThat(kv.get("1"), is("1"));
         }
     }
-    
+
     public void shouldBeAbleToReadValuesAfterReopen() throws IOException {
         try(GeoKV<String> kv = kv()) {
             for(int i=0; i<90 ; i++) {
-                kv.put(i, i, ""+i, ""+i);                
+                kv.put(i, i, ""+i, ""+i);
                 kv.put(i, i, ""+i*i, ""+i*i);
             }
         }
@@ -75,7 +75,7 @@ public class GeoKVTest {
             }
         }
     }
-    
+
     public void shouldBeAbleToIterateOverEverything() throws IOException {
         try(GeoKV<String> kv = kv()) {
             for(int i=0; i<90 ; i++) {
@@ -87,9 +87,9 @@ public class GeoKVTest {
                 count++;
             }
             assertThat(count,is(90));
-        }        
+        }
     }
-    
+
     @DataProvider
     public Object[][] illegalKeys() {
         return new String[][] {
@@ -101,14 +101,14 @@ public class GeoKVTest {
                 {""}
                 };
     }
-    
+
     @Test(expectedExceptions=IllegalArgumentException.class, dataProvider="illegalKeys")
     public void shouldDisallowKeys(String key) throws IOException {
         try(GeoKV<String> kv = kv()) {
             kv.put(0, 0, key, key + " is not allowed!");
         }
     }
-    
+
     public void shouldRemove() throws IOException {
         try(GeoKV<String> kv = kv()) {
             for(int i=0; i<90 ; i++) {
@@ -118,16 +118,16 @@ public class GeoKVTest {
             assertThat(kv.remove("42"), is("42"));
             assertThat(kv.remove("42"), nullValue());
             assertThat(kv.size(),is(size-1));
-        }        
+        }
     }
-    
+
     @Test(expectedExceptions=NullPointerException.class)
     public void shouldThrowNPEWhenRemovingNullKey() throws IOException {
         try(GeoKV<String> kv = kv()) {
             kv.remove(null);
-        }        
+        }
     }
-    
+
     public void shouldIterateOverLargeGeoHash() throws IOException {
         try(GeoKV<String> kv = kv()) {
             fillKv(kv);
@@ -137,7 +137,7 @@ public class GeoKVTest {
                 count++;
             }
             assertThat("only return stuff near berlin (u33)",count, allOf(greaterThan(0), lessThan(101)));
-        }       
+        }
     }
     public void shouldIterateOverSmallGeoHash() throws IOException {
         try(GeoKV<String> kv = kv()) {
@@ -154,7 +154,7 @@ public class GeoKVTest {
             }
         }
     }
-    
+
     public void shouldIterateOverManyGeoHashes() throws IOException {
         try(GeoKV<String> kv = kv()) {
             fillKv(kv);
@@ -162,24 +162,24 @@ public class GeoKVTest {
             assertThat(countIterable(kv.filterGeoHashes(hashes.next(),hashes.next(),hashes.next())), greaterThan(2));
         }
     }
-    
+
     public void shouldIterateWithCircle() throws IOException {
         try(GeoKV<String> kv = kv()) {
             fillKv(kv);
             assertThat(countIterable(kv.filterRadius(52, 13, 200000)), greaterThan(99));
-        }        
+        }
     }
-    
+
     public static class CoordinateRandomizer {
         private static Random random = new Random();
-        
+
         public static double[] next(double baseLatitude, double baseLongitude, int div) {
             double latitude = baseLatitude+random.nextDouble()/div;
             double longitude = baseLongitude+random.nextDouble()/div;
             return new double[] {latitude,longitude};
         }
     }
-    
+
     private void fillKv(GeoKV<String> kv) {
         for(int i=0; i<100 ; i++) {
             putHash(kv, 52, 13,1);
@@ -197,5 +197,15 @@ public class GeoKVTest {
             count++;
         }
         return count;
+    }
+
+    public void shouldSupportMultipleValuesForSameCoordinates() throws IOException {
+        try(GeoKV<String> kv = kv()) {
+            for(int i=0; i< 10000; i++) {
+                double latitude = 1 * i%5+1;
+                kv.put(latitude, 1.42, ""+i, ""+i);
+            }
+            assertThat(countIterable(kv), is(10000));
+        }
     }
 }

@@ -13,7 +13,6 @@ import java.io.OutputStreamWriter;
 import java.nio.charset.Charset;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -576,8 +575,9 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
     }
 
     private class Bucket implements Iterable<Entry<String, Value>> {
-        Map<String, Object> map = new HashMap<>();
-        Multimap<String, Value> geohashMap = HashMultimap.create();
+        Map<String, Object> map = new ConcurrentHashMap<>();
+        Map<String, Set<Value>> geohashMap = new ConcurrentHashMap<>();
+//        Multimap<String, Value> geohashMap = HashMultimap.create();
         AtomicBoolean changed = new AtomicBoolean();
         private final String geoHash;
 
@@ -591,7 +591,12 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
 
         public void put(String key, String hash, Value value) {
             map.put(key, new Object[] { hash, value });
-            geohashMap.put(hash, value);
+            Set<Value> set = geohashMap.get(hash);
+            if(set == null) {
+                set = Collections.newSetFromMap(new ConcurrentHashMap<Value,Boolean>());
+                geohashMap.put(hash, set);
+            }
+            set.add(value);
             changed.set(true);
         }
 
@@ -609,7 +614,7 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
         }
 
         public Iterator<Entry<String, Value>> filter(final String hashPrefix) {
-            final Iterator<Entry<String, Value>> it = geohashMap.entries().iterator();
+            final Iterator<Entry<String, Value>> it = new MultiMapIteratable<String, Value>(geohashMap).iterator();
             return new Iterator<Entry<String, Value>>() {
                 Entry<String, Value> next = null;
 
@@ -689,7 +694,12 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
                             String blob = rest.substring(tab + 1);
                             Value value = processor.parse(blob);
                             map.put(key, new Object[] { hash, value });
-                            geohashMap.put(hash, value);
+                            Set<Value> set = geohashMap.get(hash);
+                            if(set == null) {
+                                set = Collections.newSetFromMap(new ConcurrentHashMap<Value,Boolean>());
+                                geohashMap.put(hash, set);
+                            }
+                            set.add(value);
                         }
                     }
                 } catch (IOException e) {
@@ -711,22 +721,83 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
 
         @Override
         public Iterator<Entry<String, Value>> iterator() {
-            final Iterator<Entry<String, Value>> it = geohashMap.entries().iterator();
-            return new Iterator<Entry<String, Value>>() {
+            return new MultiMapIteratable<String, Value>(geohashMap).iterator();
+        }
+    }
+
+    private class MultiMapIteratable<K,V> implements Iterable<Entry<K,V>> {
+        private final class MapEntry implements Entry<K, V> {
+            private final K key;
+            private final V value;
+
+            public MapEntry(K key, V value) {
+                this.key = key;
+                this.value = value;
+            }
+
+            @Override
+            public K getKey() {
+                return key;
+            }
+
+            @Override
+            public V getValue() {
+                return value;
+            }
+
+            @Override
+            public V setValue(V value) {
+                throw new UnsupportedOperationException("immutable");
+            }
+        }
+
+        private final Map<K, Set<V>> map;
+
+        public MultiMapIteratable(Map<K,Set<V>> map) {
+            this.map = map;
+        }
+
+        @Override
+        public Iterator<Entry<K,V>> iterator() {
+            return new Iterator<Entry<K,V>>() {
+                Iterator<Entry<K,Set<V>>> mit = map.entrySet().iterator();
+                Entry<K,Set<V>> currentME = null;
+                Iterator<V> ci = null;
+                V next = null;
 
                 @Override
                 public boolean hasNext() {
-                    return it.hasNext();
+                    if(next!=null) {
+                        return true;
+                    } else {
+                        if((currentME == null || !ci.hasNext()) && mit.hasNext()) {
+                            currentME = mit.next();
+                            ci = currentME.getValue().iterator();
+                        }
+                        if(ci != null && ci.hasNext()) {
+                            next = ci.next();
+                            return true;
+                        } else  {
+                            return false;
+                        }
+                    }
                 }
 
                 @Override
-                public Entry<String, Value> next() {
-                    return it.next();
+                public Entry<K, V> next() {
+                    if(hasNext()) {
+                        V result = next;
+                        next = null;
+                        return new MapEntry(currentME.getKey(),result);
+                    } else {
+                        throw new NoSuchElementException();
+                    }
+
                 }
 
                 @Override
                 public void remove() {
-                    throw new UnsupportedOperationException("remove is not supported");
+                    throw new UnsupportedOperationException("Remove is not supported");
                 }
             };
         }
