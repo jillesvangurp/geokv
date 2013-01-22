@@ -121,13 +121,6 @@ public class GeoKVTest {
         }
     }
 
-    @Test(expectedExceptions=NullPointerException.class)
-    public void shouldThrowNPEWhenRemovingNullKey() throws IOException {
-        try(GeoKV<String> kv = kv()) {
-            kv.remove(null);
-        }
-    }
-
     public void shouldIterateOverLargeGeoHash() throws IOException {
         try(GeoKV<String> kv = kv()) {
             fillKv(kv);
