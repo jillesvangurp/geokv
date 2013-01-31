@@ -48,20 +48,6 @@ h1. Installation
 
 It's a maven project. So, checking it out and doing a mvn clean install should do the trick. You will need my geotools project as well, which you can find here: https://github.com/jillesvangurp/geotools.
 
-*TODO, actually release stable artifact*. Alternatively, you may use my github maven repository, which is where I deploy releases for some of my projects. In order to use this, you have to configure your settings.xml as explained here: https://github.com/jillesvangurp/mvnrepo
-
-Then you can add the following dependency:
-
-<pre>
-<code>
-<dependency>
-    <groupId>com.github.jillesvangurp</groupId>
-    <artifactId>geokv</artifactId>
-    <version>x.y</version>
-</dependency>
-</code>
-</pre>
-
 Alternatively, you can exercise your rights under the license and simply copy and adapt. The "license":https://github.com/jillesvangurp/efficientstring/blob/master/LICENSE allows you to do this and I have no problems with this.
 
 Should anyone like this licensed differently, please contact me.
