@@ -41,9 +41,9 @@
     </licenses>
 
     <scm>
-        <url>git://github.com/jillesvangurp/geokv.git</url>
+        <url>git@github.com:jillesvangurp/geokv.git</url>
         <connection>scm:git:git@github.com:jillesvangurp/geokv.git</connection>
-        <developerConnection>scm:git:git://github.com/jillesvangurp/geokv.git</developerConnection>
+        <developerConnection>scm:git:git@github.com:jillesvangurp/geokv.git</developerConnection>
     </scm>
 
 	<distributionManagement>
