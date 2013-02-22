@@ -56,4 +56,5 @@ If anyone wants to fix stuff just send me a pull request.
 
 h1. Changelog
 
-* unreleased as of yet, keep an eye on the commit log. Meanwhile the snapshots should be fine as is.
+1.0
+* First release of GeoKV
