@@ -50,6 +50,8 @@ It's a maven project. So, checking it out and doing a mvn clean install should d
 
 Alternatively, you can exercise your rights under the license and simply copy and adapt. The "license":https://github.com/jillesvangurp/geokv/blob/master/LICENSE allows you to do this and I have no problems with this.
 
+If you like to use pre-built jars, you can utilize my private maven repository as explained "here":http://www.jillesvangurp.com/2013/02/27/maven-and-my-github-projects/
+
 Should anyone like this licensed differently, please contact me.
 
 If anyone wants to fix stuff just send me a pull request.
