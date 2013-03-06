@@ -25,7 +25,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.github.jillesvangurp</groupId>
     <artifactId>geokv</artifactId>
-    <version>1.1-SNAPSHOT</version>
+    <version>1.1</version>
 
     <name>geokv</name>
     <description>A persistent map like structure that fetches content efficiently based on geohash. Ideal for processing and semi-random access.</description>
