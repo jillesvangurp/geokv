@@ -19,8 +19,11 @@ import java.util.Map.Entry;
 import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
@@ -55,6 +58,7 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
     private final LoadingCache<String, Bucket> cache;
     private final ValueProcessor<Value> processor;
     private final Set<String> geoHashes;
+    private final BucketLock bucketLock = new BucketLock();
 
     /**
      * Create a new GeoKV.
@@ -250,18 +254,56 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
             @Override
             public Bucket load(String geohash) throws Exception {
                 Bucket bucket = new Bucket(geohash);
-                bucket.read();
+                try {
+                    bucketLock.acquire(geohash);
+                    bucket.read();
+                } finally {
+                   bucketLock.release(geohash);
+                }
                 return bucket;
             }
         };
         cache = CacheBuilder.newBuilder().maximumSize(cacheSize).removalListener(new RemovalListener<String, Bucket>() {
             @Override
             public void onRemoval(RemovalNotification<String, Bucket> notification) {
-                // make sure changed buckets are written on eviction
-                notification.getValue().write();
+                try {
+                    bucketLock.acquire(notification.getKey());
+                    // make sure changed buckets are written on eviction
+                    notification.getValue().write();
+                } finally {
+                    bucketLock.release(notification.getKey());
+                }
             }
         }).build(loader);
         readIds();
+    }
+
+    class BucketLock {
+        private final Set<String> buckets = new ConcurrentSkipListSet<>();
+        Lock bucketLock = new ReentrantLock();
+
+        public void acquire(String bucket) {
+            while(true) {
+                try {
+                    bucketLock.lock();
+                    if(!buckets.contains(bucket)) {
+                        buckets.add(bucket);
+                        return;
+                    }
+                } finally {
+                    bucketLock.unlock();
+                }
+            }
+        }
+
+        public void release(String bucket) {
+            try {
+                bucketLock.lock();
+                buckets.remove(bucket);
+            } finally {
+                bucketLock.unlock();
+            }
+        }
     }
 
     private void readIds() {
