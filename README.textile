@@ -58,5 +58,10 @@ If anyone wants to fix stuff just send me a pull request.
 
 h1. Changelog
 
+* 1.2
+** Migrate to geogeometry 2.0
+** Fix deadlock issue with bucket locking
+* 1.1
+** Add better bucket locking to prevent reads overlapping with writes, which may lead to gzip related exceptions.
 * 1.0
 ** First release of GeoKV
