@@ -359,10 +359,13 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
         try {
             String hashPrefix = hash.substring(0, bucketSize);
             Bucket bucket = cache.get(hashPrefix);
-            synchronized (this) {
+            try {
+                bucketLock.acquire(hashPrefix);
                 key2geohash.put(key, hashPrefix);
                 geoHashes.add(hashPrefix);
                 bucket.put(key, hash, value);
+            } finally {
+                bucketLock.release(hashPrefix);
             }
         } catch (ExecutionException e) {
             throw new IllegalStateException(e);
@@ -397,7 +400,7 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
     }
 
     public Iterable<Entry<String, Value>> filterPolygon(double[][] polygon) {
-        Set<String> hashes = GeoHashUtils.getGeoHashesForPolygon(polygon);
+        Set<String> hashes = GeoHashUtils.geoHashesForPolygon(polygon);
         return filterGeoHashes(hashes.toArray(new String[0]));
     }
 
@@ -408,18 +411,18 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
 
     public Iterable<Entry<String, Value>> filterRadius(final double latitude, final double longitude, final double meters) {
         double[][] polygon = GeoGeometry.bbox2polygon(GeoGeometry.bbox(latitude, longitude, meters, meters));
-        Set<String> hashes = GeoHashUtils.getGeoHashesForPolygon(GeoHashUtils.getSuitableHashLength(meters, latitude, longitude),polygon);
-
+        Set<String> hashes = GeoHashUtils.geoHashesForPolygon(GeoHashUtils.suitableHashLength(meters, latitude, longitude),polygon);
         return new FilteringIterable<Entry<String, Value>>(filterGeoHashes(hashes.toArray(new String[0])), new Filter<Entry<String, Value>>() {
             @Override
             public boolean passes(Entry<String, Value> entry) {
-                return GeoGeometry.distance(new double[] { latitude, longitude }, GeoHashUtils.decode(entry.getKey())) <= meters;
+                double[] decoded = GeoHashUtils.decode(entry.getKey());
+                return GeoGeometry.distance(new double[] { longitude, latitude }, decoded) <= meters;
             }
         });
     }
 
     public Iterable<Entry<String, Value>> filterGeoHashes(final String... hashes) {
-        String[] sortedHashes = Arrays.copyOf(hashes, hashes.length);
+        final String[] sortedHashes = Arrays.copyOf(hashes, hashes.length);
         Arrays.sort(sortedHashes);
 
         return toIterable(new Iterator<Entry<String, Value>>() {
@@ -433,10 +436,10 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
                     return true;
                 }
                 if (currentIt == null || !currentIt.hasNext()) {
-                    if (i < hashes.length) {
-                        currentIt = filterGeoHash(hashes[i++]).iterator();
-                        while (!currentIt.hasNext() && i < hashes.length) {
-                            currentIt = filterGeoHash(hashes[i++]).iterator();
+                    if (i < sortedHashes.length) {
+                        currentIt = filterGeoHash(sortedHashes[i++]).iterator();
+                        while (!currentIt.hasNext() && i < sortedHashes.length) {
+                            currentIt = filterGeoHash(sortedHashes[i++]).iterator();
                         }
                     } else {
                         return false;
@@ -534,9 +537,13 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
             if (hash == null) {
                 return null;
             } else {
-                synchronized (this) {
+                try {
+                    Bucket bucket = cache.get(hash);
+                    bucketLock.acquire(hash);
                     key2geohash.remove(key);
-                    return cache.get(hash).remove(key);
+                    return bucket.remove(key);
+                } finally {
+                    bucketLock.release(hash);
                 }
             }
         } catch (ExecutionException e) {
@@ -643,7 +650,12 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
         }
 
         public Value get(String key) {
-            return extractValue(map.get(key));
+            Object row = map.get(key);
+            if(row != null) {
+                return extractValue(row);
+            } else {
+                return null;
+            }
         }
 
         private String extractGeoHash(Object object) {

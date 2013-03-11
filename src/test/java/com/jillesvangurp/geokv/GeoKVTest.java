@@ -62,6 +62,13 @@ public class GeoKVTest {
         }
     }
 
+    public void shouldReturnNullForNonExistingKeyInExistingBucket() throws IOException {
+        try(GeoKV<String> kv = kv()) {
+            kv.put(1, 1, "exists", "yay");
+            assertThat(kv.get("doesn't exist"), nullValue());
+        }
+    }
+
     public void shouldBeAbleToReadValuesAfterReopen() throws IOException {
         try(GeoKV<String> kv = kv()) {
             for(int i=0; i<90 ; i++) {
@@ -169,7 +176,7 @@ public class GeoKVTest {
         public static double[] next(double baseLatitude, double baseLongitude, int div) {
             double latitude = baseLatitude+random.nextDouble()/div;
             double longitude = baseLongitude+random.nextDouble()/div;
-            return new double[] {latitude,longitude};
+            return new double[] {longitude,latitude};
         }
     }
 
@@ -181,8 +188,8 @@ public class GeoKVTest {
     }
     private void putHash(GeoKV<String> kv, double baseLatitude, double baseLongitude,int div) {
         double[] point = CoordinateRandomizer.next(baseLatitude,baseLongitude,div);
-        String hash = GeoHashUtils.encode(point[0], point[1]);
-        kv.put(point[0], point[1], hash, hash);
+        String hash = GeoHashUtils.encode(point);
+        kv.put(point[1], point[0], hash, hash);
     }
     private <T> int countIterable(Iterable<T> iterable) {
         int count=0;
