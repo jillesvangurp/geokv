@@ -253,25 +253,26 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
         CacheLoader<String, Bucket> loader = new CacheLoader<String, Bucket>() {
             @Override
             public Bucket load(String geohash) throws Exception {
-                Bucket bucket = new Bucket(geohash);
                 try {
                     bucketLock.acquire(geohash);
+                    Bucket bucket = new Bucket(geohash);
                     bucket.read();
+                    return bucket;
                 } finally {
                    bucketLock.release(geohash);
                 }
-                return bucket;
             }
         };
         cache = CacheBuilder.newBuilder().maximumSize(cacheSize).removalListener(new RemovalListener<String, Bucket>() {
             @Override
             public void onRemoval(RemovalNotification<String, Bucket> notification) {
+                String geoHash = notification.getKey();
                 try {
-                    bucketLock.acquire(notification.getKey());
+                    bucketLock.acquire(geoHash);
                     // make sure changed buckets are written on eviction
                     notification.getValue().write();
                 } finally {
-                    bucketLock.release(notification.getKey());
+                    bucketLock.release(geoHash);
                 }
             }
         }).build(loader);
