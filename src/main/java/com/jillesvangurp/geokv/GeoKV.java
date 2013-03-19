@@ -411,6 +411,7 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
 //    }
 
     public Iterable<Entry<String, Value>> filterRadius(final double latitude, final double longitude, final double meters) {
+        GeoGeometry.validate(latitude,longitude);
         double[][] polygon = GeoGeometry.bbox2polygon(GeoGeometry.bbox(latitude, longitude, meters, meters));
         Set<String> hashes = GeoHashUtils.geoHashesForPolygon(GeoHashUtils.suitableHashLength(meters, latitude, longitude),polygon);
         return new FilteringIterable<Entry<String, Value>>(filterGeoHashes(hashes.toArray(new String[0])), new Filter<Entry<String, Value>>() {
