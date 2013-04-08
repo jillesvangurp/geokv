@@ -251,7 +251,7 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
         this.bucketSize = bucketSize;
         this.processor = processor;
 
-        db = DBMaker.newFileDB(getIdsPath()).cacheLRUEnable().cacheSize(100000).closeOnJvmShutdown().compressionEnable().make();
+        db = DBMaker.newFileDB(getIdsPath()).cacheLRUEnable().cacheSize(100000).closeOnJvmShutdown().compressionEnable().journalDisable().make();
         this.key2geohash = db.getHashMap("key2geohash");
         this.geoHashes = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
         CacheLoader<String, Bucket> loader = new CacheLoader<String, Bucket>() {
