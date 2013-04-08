@@ -5,6 +5,7 @@ import java.io.BufferedWriter;
 import java.io.Closeable;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -28,8 +29,6 @@ import java.util.zip.GZIPOutputStream;
 
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.Validate;
-import org.mapdb.DB;
-import org.mapdb.DBMaker;
 
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
@@ -60,7 +59,6 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
     private final ValueProcessor<Value> processor;
     private final Set<String> geoHashes;
     private final BucketLock bucketLock = new BucketLock();
-    private final DB db;
 
     /**
      * Create a new GeoKV.
@@ -250,9 +248,7 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
         this.dataDir = dataDir;
         this.bucketSize = bucketSize;
         this.processor = processor;
-
-        db = DBMaker.newFileDB(getIdsPath()).cacheLRUEnable().cacheSize(100000).closeOnJvmShutdown().compressionEnable().journalDisable().make();
-        this.key2geohash = db.getHashMap("key2geohash");
+        this.key2geohash = new ConcurrentHashMap<String, String>();
         this.geoHashes = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
         CacheLoader<String, Bucket> loader = new CacheLoader<String, Bucket>() {
             @Override
@@ -280,7 +276,7 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
                 }
             }
         }).build(loader);
-//        readIds();
+        readIds();
     }
 
     class BucketLock {
@@ -311,31 +307,31 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
         }
     }
 
-//    private void readIds() {
-//        File idsFile = getIdsPath();
-//        if (idsFile.exists()) {
-//            try {
-//                try (BufferedReader r = new BufferedReader(new InputStreamReader(new GZIPInputStream(new FileInputStream(idsFile)), Charset.forName("utf-8")))) {
-//                    String line;
-//                    while ((line = r.readLine()) != null) {
-//                        if (StringUtils.isNotEmpty(line)) {
-//                            int tab = line.indexOf('\t');
-//                            if (tab < 0) {
-//                                throw new IllegalStateException("line without a tab");
-//                            } else {
-//                                String key = line.substring(0, tab);
-//                                String geoHash = line.substring(tab + 1);
-//                                key2geohash.put(key, geoHash);
-//                                geoHashes.add(geoHash);
-//                            }
-//                        }
-//                    }
-//                }
-//            } catch (IOException e) {
-//                throw new IllegalStateException(e);
-//            }
-//        }
-//    }
+    private void readIds() {
+        File idsFile = getIdsPath();
+        if (idsFile.exists()) {
+            try {
+                try (BufferedReader r = new BufferedReader(new InputStreamReader(new GZIPInputStream(new FileInputStream(idsFile)), Charset.forName("utf-8")))) {
+                    String line;
+                    while ((line = r.readLine()) != null) {
+                        if (StringUtils.isNotEmpty(line)) {
+                            int tab = line.indexOf('\t');
+                            if (tab < 0) {
+                                throw new IllegalStateException("line without a tab");
+                            } else {
+                                String key = line.substring(0, tab);
+                                String geoHash = line.substring(tab + 1);
+                                key2geohash.put(key, geoHash);
+                                geoHashes.add(geoHash);
+                            }
+                        }
+                    }
+                }
+            } catch (IOException e) {
+                throw new IllegalStateException(e);
+            }
+        }
+    }
 
     public Set<String> bucketGeoHashes() {
         return Collections.unmodifiableSet(geoHashes);
@@ -565,18 +561,17 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
     public void close() throws IOException {
         // force all buckets to be written
         cache.invalidateAll();
-        db.close();
-//        writeIds();
+        writeIds();
     }
 
-//    private void writeIds() throws IOException, FileNotFoundException {
-//        File f = getIdsPath();
-//        try (BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(new GZIPOutputStream(new FileOutputStream(f)), Charset.forName("utf-8")))) {
-//            for (Entry<String, String> entry : key2geohash.entrySet()) {
-//                bw.write(entry.getKey() + "\t" + entry.getValue() + "\n");
-//            }
-//        }
-//    }
+    private void writeIds() throws IOException, FileNotFoundException {
+        File f = getIdsPath();
+        try (BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(new GZIPOutputStream(new FileOutputStream(f)), Charset.forName("utf-8")))) {
+            for (Entry<String, String> entry : key2geohash.entrySet()) {
+                bw.write(entry.getKey() + "\t" + entry.getValue() + "\n");
+            }
+        }
+    }
 
     private File getIdsPath() {
         return new File(dataDir, "ids.gz");
