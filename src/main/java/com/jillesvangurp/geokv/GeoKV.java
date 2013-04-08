@@ -30,7 +30,6 @@ import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.Validate;
 import org.mapdb.DB;
 import org.mapdb.DBMaker;
-import org.mapdb.HTreeMap;
 
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
@@ -56,7 +55,7 @@ import com.jillesvangurp.iterables.FilteringIterable;
 public class GeoKV<Value> implements Closeable, Iterable<Value> {
     private final int bucketSize;
     private final String dataDir;
-    private final HTreeMap<String, String> key2geohash;
+    private final Map<String, String> key2geohash;
     private final LoadingCache<String, Bucket> cache;
     private final ValueProcessor<Value> processor;
     private final Set<String> geoHashes;
@@ -368,8 +367,6 @@ public class GeoKV<Value> implements Closeable, Iterable<Value> {
             try {
                 bucketLock.acquire(hashPrefix);
                 key2geohash.put(key, hashPrefix);
-//                necessary for working correctly but extremely slow
-//                db.commit();
                 geoHashes.add(hashPrefix);
                 bucket.put(key, hash, value);
             } finally {
