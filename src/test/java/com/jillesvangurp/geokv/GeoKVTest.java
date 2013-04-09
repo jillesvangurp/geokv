@@ -203,7 +203,7 @@ public class GeoKVTest {
         try(GeoKV<String> kv = kv()) {
             for(int i=0; i< 10000; i++) {
                 double latitude = 1 * i%5+1;
-                kv.put(latitude, 1.42, ""+i, ""+i);
+                kv.put(1.42,latitude, ""+i, ""+i);
             }
             assertThat(countIterable(kv), is(10000));
         }
